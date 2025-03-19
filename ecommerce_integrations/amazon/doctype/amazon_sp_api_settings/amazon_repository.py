@@ -14,6 +14,7 @@ from ecommerce_integrations.amazon.doctype.amazon_sp_api_settings.amazon_sp_api 
 	CatalogItems,
 	Finances,
 	Orders,
+	Listings,
 	SPAPIError,
 )
 from ecommerce_integrations.amazon.doctype.amazon_sp_api_settings.amazon_sp_api_settings import (
@@ -60,7 +61,6 @@ class AmazonRepository:
 
 		for error in errors:
 			msg = f"<b>Error:</b> {error}<br/><b>Error Description:</b> {errors.get(error)}"
-			frappe.msgprint(msg, alert=True, indicator="red")
 			frappe.log_error(
 				message=f"{error}: {errors.get(error)}", title=f'Method "{sp_api_method.__name__}" failed',
 			)
@@ -474,8 +474,25 @@ class AmazonRepository:
 
 		return sales_orders
 
+	def search_listings_item(self, seller_id, sku_list = None, sort_by = None, sort_order = None, page_size = None, next_token = None) -> list:
+		listings = self.get_listings_instance()
+		listings_payload = self.call_sp_api_method(
+			sp_api_method=listings.search_listings_items, seller_id=seller_id, sku_list=sku_list, sort_by=sort_by, sort_order=sort_order, page_size=page_size, next_token=next_token
+		)
+		return listings_payload
+	
+	def get_listings_item(self, seller_id, sku) -> dict:
+		listings = self.get_listings_instance()
+		listings_payload = self.call_sp_api_method(
+			sp_api_method=listings.get_listings_item, seller_id=seller_id, sku=sku
+		)
+		return listings_payload
+	
 	def get_catalog_items_instance(self) -> CatalogItems:
 		return CatalogItems(**self.instance_params)
+	
+	def get_listings_instance(self) -> Listings:
+		return Listings(**self.instance_params)
 
 
 def validate_amazon_sp_api_credentials(**args) -> None:
@@ -504,3 +521,11 @@ def validate_amazon_sp_api_credentials(**args) -> None:
 def get_orders(amz_setting_name, created_after) -> list:
 	ar = AmazonRepository(amz_setting_name)
 	return ar.get_orders(created_after)
+
+def search_listings(amz_setting_name, seller_id, sku_list = None, sort_by = None, sort_order = None, page_size = None, next_token = None) -> list:
+	ar = AmazonRepository(amz_setting_name)
+	return ar.search_listings_item(seller_id, sku_list, sort_by, sort_order, page_size, next_token)
+
+def get_listings_item(amz_setting_name, seller_id, sku) -> dict:
+	ar = AmazonRepository(amz_setting_name)
+	return ar.get_listings_item(seller_id, sku)

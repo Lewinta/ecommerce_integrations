@@ -10,6 +10,7 @@ import boto3
 from requests import request
 from requests.auth import AuthBase
 from requests.compat import urlparse
+import frappe
 
 __all__ = [
 	"SPAPIError",
@@ -136,6 +137,7 @@ class AWSSigV4(AuthBase):
 
 		# Create payload hash (hash of the request body content).
 		if request.method == "GET":
+			payload_hash = hashlib.sha256(("").encode("utf-8")).hexdigest()
 			payload_hash = hashlib.sha256(("").encode("utf-8")).hexdigest()
 		else:
 			if request.body:
@@ -289,7 +291,6 @@ class SPAPI(object):
 			data = Util.remove_empty(data)
 
 		url = self.endpoint + self.BASE_URI + append_to_base_uri
-
 		response = request(
 			method=method,
 			url=url,
@@ -395,6 +396,117 @@ class CatalogItems(SPAPI):
 
 		return self.make_request(append_to_base_uri=append_to_base_uri, params=data)
 
+class Listings(SPAPI):
+	""" Amazon Listings API """
+
+	BASE_URI = "/listings/2021-08-01"
+
+	def search_listings_items(
+		self,
+		marketplace_ids: list = None,
+		seller_id: str = None,
+		sku_list: list = None,
+		next_token: str = None,
+		sort_by: str = None,
+		sort_order: str = None,
+		page_size: int = None,
+	) -> dict:
+		"""Returns a list of listings based on the search criteria"""
+		append_to_base_uri = f"/items/{seller_id}"
+		data = dict(
+			marketplaceIds=marketplace_ids or [self.marketplace_id],
+			includeData=["attributes"],
+			nextToken=next_token,
+			sortBy=sort_by,
+			sortOrder=sort_order,
+			pageSize=page_size,
+			identifiersType="SKU" if sku_list else None,
+			identifiers=sku_list if sku_list else None
+		)
+		
+		return dict(payload=self.make_request(method="GET", append_to_base_uri=append_to_base_uri, params=data))
+	
+	def get_listings_item(
+		self,
+		seller_id: str,
+		sku: str,
+		marketplace_ids: list = None,
+		issue_locale: str = "en_US",
+	) -> dict:
+		"""Returns a listing by item ID"""
+		append_to_base_uri = f"/items/{seller_id}/{sku}"
+		data = dict(
+			marketplaceIds=marketplace_ids or [self.marketplace_id],
+			issueLocale=issue_locale,
+			includeData=["attributes"]
+		)
+		return dict(payload=self.make_request(method="GET", append_to_base_uri=append_to_base_uri, params=data))
+	
+	def put_listings_item(
+		self,
+		seller_id: str,
+		sku: str,
+		product_type: str,
+		listings_payload: dict,
+		marketplace_ids: list = None,
+		issue_locale: str = "en_US",
+	) -> dict:
+		"""Creates or fully-updates an existing listing"""
+		append_to_base_uri = f"/items/{seller_id}/{sku}"
+		data = dict(
+			marketplaceIds=marketplace_ids or [self.marketplace_id],
+			issueLocale=issue_locale,
+			productType=product_type,
+		)
+		
+		return self.make_request(
+			method="PUT",
+			append_to_base_uri=append_to_base_uri,
+			params=data,
+			data=listings_payload,
+		)
+
+	def patch_listings_item(
+		self,
+		seller_id: str,
+		sku: str,
+		listings_payload: dict,
+		marketplace_ids: list = None,
+		issue_locale: str = "en_US",
+	) -> dict:
+		"""Partially updates an existing listing"""
+		append_to_base_uri = f"/items/{seller_id}/{sku}"
+		data = dict(
+			marketplaceIds=marketplace_ids or [self.marketplace_id],
+			issueLocale=issue_locale,
+		)
+		
+		return self.make_request(
+			method="PATCH",
+			append_to_base_uri=append_to_base_uri,
+			params=data,
+			data=listings_payload,
+		)
+
+	def delete_listings_item(
+		self,
+		seller_id: str,
+		sku: str,
+		marketplace_ids: list = None,
+		issue_locale: str = "en_US",
+	) -> dict:
+		"""Removes an existing listing"""
+		append_to_base_uri = f"/items/{seller_id}/{sku}"
+		data = dict(
+			marketplaceIds=marketplace_ids or [self.marketplace_id],
+			issueLocale=issue_locale,
+		)
+		
+		return self.make_request(
+			method="DELETE",
+			append_to_base_uri=append_to_base_uri,
+			params=data,
+		)
 
 class Util:
 	@staticmethod
