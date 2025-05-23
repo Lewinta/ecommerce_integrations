@@ -155,7 +155,11 @@ class AmazonRepository:
 
 	def create_item(self, order_item) -> str:
 		def create_item_group(amazon_item) -> str:
-			item_group_name = amazon_item.get("AttributeSets")[0].get("ProductGroup")
+			
+			item_group_name = None
+			print(f"Amazon item: {amazon_item}")
+			if amazon_item.get("AttributeSets") and amazon_item.get("AttributeSets")[0].get("ProductGroup"):
+				item_group_name = amazon_item.get("AttributeSets")[0].get("ProductGroup")
 
 			if item_group_name:
 				item_group = frappe.db.get_value("Item Group", filters={"item_group_name": item_group_name})
@@ -220,7 +224,8 @@ class AmazonRepository:
 			ecommerce_item.insert(ignore_permissions=True)
 
 		catalog_items = self.get_catalog_items_instance()
-		amazon_item = catalog_items.get_catalog_item(order_item["ASIN"])["payload"]
+		print(f"Catalog Items: {catalog_items}")
+		amazon_item = catalog_items.get_catalog_item(order_item["ASIN"]).get("payload")
 
 		item = frappe.new_doc("Item")
 
@@ -266,6 +271,8 @@ class AmazonRepository:
 		else:
 			frappe.throw(_("At least one field must be selected to find the item code."))
 
+		print(f"Creating item for {order_item['SellerSKU']}")
+		print(f"Order Item: {order_item}")
 		item_code = self.create_item(order_item)
 		return item_code
 
@@ -448,9 +455,9 @@ class AmazonRepository:
 			created_after=created_after,
 			order_statuses=order_statuses,
 			fulfillment_channels=fulfillment_channels,
-			max_results=50,
+			max_results=100,
 		)
-
+		print(f"Found {len(orders_payload.get('Orders'))} orders")
 		sales_orders = []
 
 		while True:

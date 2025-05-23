@@ -11,7 +11,7 @@ class AmazonSPListing(Document):
         'id': 'sku'
     }
 	
-	amz_setting_name = "21qv23optp"
+	amz_setting_name = "2n7sn0hlgc"
 	
 	def db_insert(self, *args, **kwargs):
 		pass
@@ -74,7 +74,7 @@ class AmazonSPListing(Document):
 			"""Fetch a single page from Amazon SP-API"""
 			return search_listings(
 				seller_id="AZ8IEI2WE6JHM",
-				amz_setting_name="21qv23optp",
+				amz_setting_name="2n7sn0hlgc",
 				sort_by=sort_field_mapping.get(sort_field, "LastUpdateDate"),
 				sort_order=sort_order,
 				page_size=20,  # Amazon's max page size
@@ -157,7 +157,7 @@ def amazon_sp_listings_ct_query(doctype, txt, searchfield, start, page_len, filt
 
     all_items = search_listings(
         seller_id="AZ8IEI2WE6JHM",
-        amz_setting_name="21qv23optp",
+        amz_setting_name="2n7sn0hlgc",
         sku_list=txt
     )
 
