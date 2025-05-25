@@ -415,7 +415,7 @@ class Listings(SPAPI):
 		append_to_base_uri = f"/items/{seller_id}"
 		data = dict(
 			marketplaceIds=marketplace_ids or [self.marketplace_id],
-			includeData=["attributes"],
+			includeData=["summaries", "fulfillmentAvailability"],
 			nextToken=next_token,
 			sortBy=sort_by,
 			sortOrder=sort_order,
@@ -423,7 +423,6 @@ class Listings(SPAPI):
 			identifiersType="SKU" if sku_list else None,
 			identifiers=sku_list if sku_list else None
 		)
-		
 		return dict(payload=self.make_request(method="GET", append_to_base_uri=append_to_base_uri, params=data))
 	
 	def get_listings_item(

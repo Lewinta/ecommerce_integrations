@@ -157,7 +157,7 @@ class AmazonRepository:
 		def create_item_group(amazon_item) -> str:
 			
 			item_group_name = None
-			print(f"Amazon item: {amazon_item}")
+			# print(f"Amazon item: {amazon_item}")
 			if amazon_item.get("AttributeSets") and amazon_item.get("AttributeSets")[0].get("ProductGroup"):
 				item_group_name = amazon_item.get("AttributeSets")[0].get("ProductGroup")
 
@@ -224,8 +224,27 @@ class AmazonRepository:
 			ecommerce_item.insert(ignore_permissions=True)
 
 		catalog_items = self.get_catalog_items_instance()
-		print(f"Catalog Items: {catalog_items}")
-		amazon_item = catalog_items.get_catalog_item(order_item["ASIN"]).get("payload")
+		# print(f"Catalog Items: {catalog_items}")
+		response = catalog_items.get_catalog_item(order_item["ASIN"])
+		# Let's check if the response is successful
+		if not response.get("success"):
+			frappe.log_error(
+				f"Catalog lookup failed for ASIN: {order_item['ASIN']}", 
+				f"Amazon Catalog Lookup Error | Response: {response}" +
+				f"Traceback: {frappe.get_traceback()}"
+			)
+			# Fallback: skip item or use defaults
+			return order_item["SellerSKU"]
+		amazon_item = response.get("payload")
+
+		if amazon_item is None:
+			frappe.log_error(
+				f"Catalog lookup failed for ASIN: {order_item['ASIN']}", 
+				f"Amazon Catalog Lookup Error | Response: {response}" +
+				f"Traceback: {frappe.get_traceback()}"
+			)
+			# Fallback: skip item or use defaults
+			return order_item["SellerSKU"]  # or raise custom error
 
 		item = frappe.new_doc("Item")
 
@@ -236,6 +255,8 @@ class AmazonRepository:
 			if field_map.item_field:
 				setattr(item, field_map.item_field, order_item[field_map.amazon_field])
 
+		# Let's create the Item Group
+		# print(f"Creating item group for {amazon_item}")	
 		item.item_group = create_item_group(amazon_item)
 		item.brand = create_brand(amazon_item)
 		item.manufacturer = create_manufacturer(amazon_item)
@@ -271,8 +292,9 @@ class AmazonRepository:
 		else:
 			frappe.throw(_("At least one field must be selected to find the item code."))
 
-		print(f"Creating item for {order_item['SellerSKU']}")
-		print(f"Order Item: {order_item}")
+		# print(f"Creating item for {order_item['SellerSKU']}")
+		# print(f"Order Item: {order_item}")
+		# print(f"Now let's create item for {order_item}")
 		item_code = self.create_item(order_item)
 		return item_code
 
@@ -291,6 +313,7 @@ class AmazonRepository:
 
 			for order_item in order_items_list:
 				if order_item.get("QuantityOrdered") > 0:
+					# print(f"Order Item before append: {order_item}")
 					final_order_items.append(
 						{
 							"item_code": self.get_item_code(order_item),
@@ -398,6 +421,7 @@ class AmazonRepository:
 		if so:
 			return so
 		else:
+			# print(f"Getting order items for {order_id}")
 			items = self.get_order_items(order_id)
 
 			if not items:
@@ -416,6 +440,7 @@ class AmazonRepository:
 			so.delivery_date = delivery_date
 			so.transaction_date = transaction_date
 			so.company = self.amz_setting.company
+			so.fulfillment_method = order.get("FulfillmentChannel") 
 
 			for item in items:
 				so.append("items", item)
@@ -430,9 +455,15 @@ class AmazonRepository:
 
 				for fee in charges_and_fees.get("fees"):
 					so.append("taxes", fee)
-
-			so.insert(ignore_permissions=True)
-			so.submit()
+			try:
+				so.insert(ignore_permissions=True)
+				so.submit()
+			except Exception as e:
+				frappe.log_error(
+					title=f"Sales Order Creation Error for Order ID: {order_id}",
+					message=f"Error creating sales order: {e}",
+				)
+				
 
 			return so.name
 
@@ -455,9 +486,9 @@ class AmazonRepository:
 			created_after=created_after,
 			order_statuses=order_statuses,
 			fulfillment_channels=fulfillment_channels,
-			max_results=100,
+			max_results=10,
 		)
-		print(f"Found {len(orders_payload.get('Orders'))} orders")
+		# print(f"Found {len(orders_payload.get('Orders'))} orders")
 		sales_orders = []
 
 		while True:
@@ -468,6 +499,9 @@ class AmazonRepository:
 				break
 
 			for order in orders_list:
+				# print(f"Let's create sales order {order}")
+
+
 				sales_order = self.create_sales_order(order)
 				if sales_order:
 					sales_orders.append(sales_order)

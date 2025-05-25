@@ -8,7 +8,8 @@ import frappe
 from frappe import _
 from frappe.custom.doctype.custom_field.custom_field import create_custom_fields
 from frappe.model.document import Document
-from frappe.utils import add_days, today
+from frappe.utils import add_days, today, flt
+from frappe.utils.background_jobs import enqueue_doc
 
 
 class AmazonSPAPISettings(Document):
@@ -92,6 +93,41 @@ class AmazonSPAPISettings(Document):
 			country=self.get("country"),
 		)
 
+	def create_items(self, items, page, total_records):
+		idx = 1
+		for item in items:
+			frappe.publish_realtime(
+				'amazon_listing_sync_progress',
+				{   
+					"idx":idx + (page * 20),
+					"length": total_records,
+				}
+			)
+
+			if not frappe.db.exists("Item", {"item_code": item.get("sku")}):
+				item_doc = frappe.new_doc("Item")
+
+				item_doc.update({
+					"item_code": item.get("sku"),
+					"item_name": item.get("title"),
+					"description": item.get("title"),
+					"item_group": "Products",
+					"stock_uom": "Unit",
+					"is_sales_item": 1,
+					"is_purchase_item": 0,
+					"is_stock_item": 0,
+				})
+				if item.get('summaries'):
+					summaries = item.get('summaries')[0]
+					item_doc.append("custom_amazon_listings", {
+						"marketplace_id": summaries.get("marketplaceId"),
+						"seller_id": self.seller_id,
+						"sku": item.get("sku"),
+						"amazon_sp_api_settings": self.name,
+					})
+
+				item_doc.save(ignore_permissions=True)
+	
 	@frappe.whitelist()
 	def set_default_fields_map(self):
 		for field_map in [
@@ -128,6 +164,62 @@ class AmazonSPAPISettings(Document):
 				_("Please enable the Amazon SP API Settings {0}.").format(frappe.bold(self.name))
 			)
 
+	@frappe.whitelist()
+	def enqueue_sync_listings(self):
+		enqueue_doc(
+			self.doctype, 
+			self.name,
+			method="sync_amazon_listings",
+			queue="long",
+		)
+
+	def sync_amazon_listings(self):
+		from ecommerce_integrations.amazon.doctype.amazon_sp_api_settings.amazon_repository import search_listings
+		from frappe.utils import flt
+
+		items = []
+		next_token = None
+		page = 0
+		seen_tokens = set()
+
+		try:
+			while True:
+				request = search_listings(
+					amz_setting_name=self.name,
+					seller_id=self.seller_id,
+					next_token=next_token
+				)
+
+				new_items = request.get("items", [])
+				number_of_results = request.get("numberOfResults") or 1
+
+				# Logging progress
+				progress = flt(len(items) / number_of_results * 100, 2)
+				print(f"Fetching Page {page} ({len(items)}/{number_of_results})\t{progress}%")
+
+				items.extend(new_items)
+				self.create_items(new_items, page, number_of_results)
+
+				# Pagination control
+				pagination = request.get("pagination", {})
+				next_token = pagination.get("nextToken")
+
+				if not next_token:
+					break  # No more pages
+
+				# Infinite loop protection
+				if next_token in seen_tokens:
+					print("Detected repeated nextToken. Breaking pagination loop.")
+					break
+
+				seen_tokens.add(next_token)
+				page += 1
+
+		except Exception as e:
+			title = f"Error in Syncing Amazon Listings for {self.name}"
+			message = f"Error: {str(e)}\nTraceback:\n{frappe.get_traceback()}"
+			frappe.log_error(title, message)
+		
 
 # Called via a hook in every hour.
 def schedule_get_order_details():
@@ -181,3 +273,7 @@ def migrate_old_data():
 				ecomm_item.sku = item.amazon_item_code
 				ecomm_item.flags.ignore_mandatory = True
 				ecomm_item.save(ignore_permissions=True)
+
+
+
+	

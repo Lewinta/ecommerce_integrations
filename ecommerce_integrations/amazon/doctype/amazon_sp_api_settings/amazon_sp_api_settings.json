@@ -34,6 +34,7 @@
   "after_date",
   "taxes_charges",
   "sync_orders",
+  "sync_listings",
   "column_break_4",
   "enable_sync",
   "max_retry_limit",
@@ -254,10 +255,15 @@
    "fieldname": "create_item_if_not_exists",
    "fieldtype": "Check",
    "label": "Create Item If Not Exists"
+  },
+  {
+   "fieldname": "sync_listings",
+   "fieldtype": "Button",
+   "label": "Sync Listings"
   }
  ],
  "links": [],
- "modified": "2023-07-31 17:20:21.492153",
+ "modified": "2025-05-23 11:46:51.449785",
  "modified_by": "Administrator",
  "module": "Amazon",
  "name": "Amazon SP API Settings",

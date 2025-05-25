@@ -8,6 +8,9 @@
  "engine": "InnoDB",
  "field_order": [
   "sku",
+  "column_break_g1iqh",
+  "image",
+  "summaries_sb",
   "summaries"
  ],
  "fields": [
@@ -18,14 +21,28 @@
   },
   {
    "fieldname": "summaries",
-   "fieldtype": "JSON",
-   "label": "summaries"
+   "fieldtype": "JSON"
+  },
+  {
+   "fieldname": "column_break_g1iqh",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "image",
+   "fieldtype": "Attach Image",
+   "label": "image"
+  },
+  {
+   "fieldname": "summaries_sb",
+   "fieldtype": "Section Break",
+   "label": "Summaries"
   }
  ],
+ "image_field": "image",
  "index_web_pages_for_search": 1,
  "is_virtual": 1,
  "links": [],
- "modified": "2025-03-18 12:19:07.856223",
+ "modified": "2025-05-24 19:41:13.185853",
  "modified_by": "Administrator",
  "module": "Amazon",
  "name": "Amazon SP Listing",

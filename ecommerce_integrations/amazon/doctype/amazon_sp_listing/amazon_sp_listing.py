@@ -5,6 +5,7 @@
 from frappe.model.document import Document
 import frappe
 import json
+from six import string_types
 class AmazonSPListing(Document):
 
 	field_mappings = {
@@ -22,13 +23,7 @@ class AmazonSPListing(Document):
 		sku = self.name
 		response = get_listings_item(amz_setting_name=self.amz_setting_name, seller_id="AZ8IEI2WE6JHM", sku=sku)
 		
-		dict_response = frappe._dict(
-			name=response["sku"],
-			sku=response["sku"],
-			summaries=frappe.as_json(response["summaries"])
-		)
-
-		super(Document, self).__init__(dict_response)
+		super(Document, self).__init__(decode(response))
 		
 
 	def db_update(self, *args, **kwargs):
@@ -38,30 +33,12 @@ class AmazonSPListing(Document):
 	def get_list(args):
 		"""Get Amazon listings with pagination support for Frappe's list view"""
 		from ecommerce_integrations.amazon.doctype.amazon_sp_api_settings.amazon_repository import search_listings
+		# Cache key for storing pagination tokens
+		cache_key = f"amazon_sp_listing_tokens_{frappe.session.user}"
 		
 		# Parse Frappe pagination parameters
 		page_length = int(args.get("page_length", 20))
 		start = int(args.get("start", 0))
-		
-		# Parse sorting parameters
-		sort_field = "modified"
-		sort_order = "DESC"
-		if args.get("order_by"):
-			order_parts = args["order_by"].replace("`", "").split(".")[-1].split()
-			if len(order_parts) >= 1:
-				sort_field = order_parts[0]
-			if len(order_parts) >= 2:
-				sort_order = order_parts[1].upper()
-
-		sort_field_mapping = {
-			"modified": "LastUpdateDate",
-			"creation": "CreatedDate",
-			"name": "SKU",
-			"idx": "SKU"
-		}
-
-		# Cache key for storing pagination tokens
-		cache_key = f"amazon_sp_listing_tokens_{frappe.session.user}"
 		
 		def get_cached_tokens():
 			return frappe.cache().get_value(cache_key) or {}
@@ -81,6 +58,25 @@ class AmazonSPListing(Document):
 				next_token=next_token
 			)
 
+		
+		# Parse sorting parameters
+		sort_field = "modified"
+		sort_order = "DESC"
+		if args.get("order_by"):
+			order_parts = args["order_by"].replace("`", "").split(".")[-1].split()
+			if len(order_parts) >= 1:
+				sort_field = order_parts[0]
+			if len(order_parts) >= 2:
+				sort_order = order_parts[1].upper()
+
+		sort_field_mapping = {
+			"modified": "LastUpdateDate",
+			"creation": "CreatedDate",
+			"name": "SKU",
+			"idx": "SKU"
+		}
+
+	
 		try:
 			all_items = []
 			tokens = get_cached_tokens()
@@ -128,18 +124,16 @@ class AmazonSPListing(Document):
 
 			# Prepare the response
 			response = [
-				{
-					"name": item.get("sku"),
-					"sku": item.get("sku"),
-					"summaries": item.get("summaries")
-				}
+				decode(item)
 				for item in all_items[:page_length]
 			]
 			return response
 		except Exception as e:
-			frappe.log_error(
-				message=f"Amazon Listings Error: {str(e)}\nArgs: {args}",
-				title="Amazon SP Listing Get List Error")
+			title = "Amazon SP Listing Get List Error"
+			message = f"Amazon Listings Error: {str(e)}\n"
+			message += "\nTraceback: " + frappe.get_traceback()
+			frappe.log_error( title, message)
+			
 			return {"data": [], "total_count": 0}
 
 	@staticmethod
@@ -150,6 +144,25 @@ class AmazonSPListing(Document):
 	def get_stats(args):
 		pass
 	
+def decode(item):
+	return frappe._dict({
+		"name": item.get("sku"),
+		"sku": item.get("sku"),
+		"image": extract_image(item),
+		"summaries": frappe.as_json(item),
+	})
+
+def extract_image(item):
+	if isinstance(item, string_types):
+		item = json.loads(item)
+	if not item.get("summaries"):
+		return None
+	summaries = item.get("summaries")[0]
+
+	if not summaries.get('mainImage'):
+		return None
+	return summaries.get('mainImage').get("link")
+
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs
 def amazon_sp_listings_ct_query(doctype, txt, searchfield, start, page_len, filters):
@@ -158,7 +171,7 @@ def amazon_sp_listings_ct_query(doctype, txt, searchfield, start, page_len, filt
     all_items = search_listings(
         seller_id="AZ8IEI2WE6JHM",
         amz_setting_name="2n7sn0hlgc",
-        sku_list=txt
+		sku=txt
     )
 
     # Convert to the correct format: list of [value, description] pairs

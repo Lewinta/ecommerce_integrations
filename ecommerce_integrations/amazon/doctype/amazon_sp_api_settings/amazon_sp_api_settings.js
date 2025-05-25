@@ -2,6 +2,21 @@
 // For license information, please see license.txt
 
 frappe.ui.form.on('Amazon SP API Settings', {
+	setup (frm) {
+		frappe.realtime.on("amazon_listing_sync_progress", function(data) {
+            frappe.dom.unfreeze();
+            if (data.idx && data.length) {
+                
+                frappe.show_progress(
+                    "Syncing Amazon listings",
+                    data.idx, data.length,
+                    `Syncing Amazon listings ${data.idx} of ${data.length}`,
+                    true
+                );
+            }
+        });
+	},
+
 	refresh(frm) {
 		if (frm.doc.__islocal && !frm.doc.amazon_fields_map) {
 			frm.trigger("set_default_fields_map");
@@ -39,5 +54,17 @@ frappe.ui.form.on('Amazon SP API Settings', {
 				}
 			};
 		});
-	}
+	},
+
+	sync_listings_button(frm) {
+        frappe.dom.freeze("Preparing for Sync...");
+        frappe.call({
+            method: "erpnext_ebay.sync_orders.enqueue_sync_listings",
+            args: {ebay_manager: frm.docname}, 
+        });
+        frappe.show_alert({
+            message: __("Syncing eBay listings;\n This may take some time..."),
+            indicator: 'green'
+        });
+    },
 });
