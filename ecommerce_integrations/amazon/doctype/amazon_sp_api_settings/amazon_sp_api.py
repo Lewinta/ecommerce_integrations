@@ -349,16 +349,16 @@ class Orders(SPAPI):
 		""" Returns orders created or updated during the time frame indicated by the specified parameters. You can also apply a range of filtering criteria to narrow the list of orders returned. If NextToken is present, that will be used to retrieve the orders instead of other criteria. """
 		data = dict(
 			CreatedAfter=created_after,
-			CreatedBefore=created_before,
-			LastUpdatedAfter=last_updated_after,
-			LastUpdatedBefore=last_updated_before,
-			BuyerEmail=buyer_email,
-			SellerOrderId=seller_order_id,
+			# CreatedBefore=created_before,
+			# LastUpdatedAfter=last_updated_after,
+			# LastUpdatedBefore=last_updated_before,
+			# BuyerEmail=buyer_email,
+			# SellerOrderId=seller_order_id,
 			MaxResultsPerPage=max_results,
 			NextToken=next_token,
-			ActualFulfillmentSupplySourceId=actual_fulfillment_supply_source_id,
-			IsISPU=is_ispu,
-			StoreChainStoreId=store_chain_store_id,
+			# ActualFulfillmentSupplySourceId=actual_fulfillment_supply_source_id,
+			# IsISPU=is_ispu,
+			# StoreChainStoreIddata=store_chain_store_id,
 		)
 
 		self.list_to_dict("OrderStatuses", order_statuses, data)
@@ -371,9 +371,18 @@ class Orders(SPAPI):
 		if not marketplace_ids:
 			marketplace_ids = [self.marketplace_id]
 			data["MarketplaceIds"] = marketplace_ids
+		
+		# data["FulfillmentChannels"] = ['AFN']
 
+		print(f"params: {data}")
 		return self.make_request(params=data)
 
+	def get_order(self, order_id: str) -> dict:
+		"""Fetch a single order by AmazonOrderId directly."""
+		append_to_base_uri = f"/{order_id}"
+		return self.make_request(method="GET", append_to_base_uri=append_to_base_uri)
+
+	
 	def get_order_items(self, order_id: str, next_token: str = None) -> dict:
 		""" Returns detailed order item information for the order indicated by the specified order ID. If NextToken is provided, it's used to retrieve the next page of order items. """
 		append_to_base_uri = f"/{order_id}/orderItems"

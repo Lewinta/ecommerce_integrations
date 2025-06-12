@@ -4,11 +4,11 @@
 
 import time
 import urllib
-
+from frappe.utils import add_days, today
 import dateutil
 import frappe
 from frappe import _
-
+from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
 from ecommerce_integrations.amazon.doctype.amazon_sp_api_settings.amazon_sp_api import (
 	SPAPI,
 	CatalogItems,
@@ -154,118 +154,43 @@ class AmazonRepository:
 		return Orders(**self.instance_params)
 
 	def create_item(self, order_item) -> str:
-		def create_item_group(amazon_item) -> str:
-			
-			item_group_name = None
-			# print(f"Amazon item: {amazon_item}")
-			if amazon_item.get("AttributeSets") and amazon_item.get("AttributeSets")[0].get("ProductGroup"):
-				item_group_name = amazon_item.get("AttributeSets")[0].get("ProductGroup")
-
-			if item_group_name:
-				item_group = frappe.db.get_value("Item Group", filters={"item_group_name": item_group_name})
-
-				if not item_group:
-					new_item_group = frappe.new_doc("Item Group")
-					new_item_group.item_group_name = item_group_name
-					new_item_group.parent_item_group = self.amz_setting.parent_item_group
-					new_item_group.insert()
-					return new_item_group.item_group_name
-				return item_group
-
-			raise (KeyError("ProductGroup"))
-
-		def create_brand(amazon_item) -> str:
-			brand_name = amazon_item.get("AttributeSets")[0].get("Brand")
-
-			if not brand_name:
-				return
-
-			existing_brand = frappe.db.get_value("Brand", filters={"brand": brand_name})
-
-			if not existing_brand:
-				brand = frappe.new_doc("Brand")
-				brand.brand = brand_name
-				brand.insert()
-				return brand.brand
-			return existing_brand
-
-		def create_manufacturer(amazon_item) -> str:
-			manufacturer_name = amazon_item.get("AttributeSets")[0].get("Manufacturer")
-
-			if not manufacturer_name:
-				return
-
-			existing_manufacturer = frappe.db.get_value(
-				"Manufacturer", filters={"short_name": manufacturer_name}
-			)
-
-			if not existing_manufacturer:
-				manufacturer = frappe.new_doc("Manufacturer")
-				manufacturer.short_name = manufacturer_name
-				manufacturer.insert()
-				return manufacturer.short_name
-			return existing_manufacturer
-
-		def create_item_price(amazon_item, item_code) -> None:
-			item_price = frappe.new_doc("Item Price")
-			item_price.price_list = self.amz_setting.price_list
-			item_price.price_list_rate = (
-				amazon_item.get("AttributeSets")[0].get("ListPrice", {}).get("Amount") or 0
-			)
-			item_price.item_code = item_code
-			item_price.insert()
-
-		def create_ecommerce_item(order_item, item_code) -> None:
-			ecommerce_item = frappe.new_doc("Ecommerce Item")
-			ecommerce_item.integration = frappe.get_meta("Amazon SP API Settings").module
-			ecommerce_item.erpnext_item_code = item_code
-			ecommerce_item.integration_item_code = order_item["ASIN"]
-			ecommerce_item.sku = order_item["SellerSKU"]
-			ecommerce_item.insert(ignore_permissions=True)
-
-		catalog_items = self.get_catalog_items_instance()
-		# print(f"Catalog Items: {catalog_items}")
-		response = catalog_items.get_catalog_item(order_item["ASIN"])
-		# Let's check if the response is successful
-		if not response.get("success"):
-			frappe.log_error(
-				f"Catalog lookup failed for ASIN: {order_item['ASIN']}", 
-				f"Amazon Catalog Lookup Error | Response: {response}" +
-				f"Traceback: {frappe.get_traceback()}"
-			)
-			# Fallback: skip item or use defaults
-			return order_item["SellerSKU"]
-		amazon_item = response.get("payload")
-
-		if amazon_item is None:
-			frappe.log_error(
-				f"Catalog lookup failed for ASIN: {order_item['ASIN']}", 
-				f"Amazon Catalog Lookup Error | Response: {response}" +
-				f"Traceback: {frappe.get_traceback()}"
-			)
-			# Fallback: skip item or use defaults
-			return order_item["SellerSKU"]  # or raise custom error
-
-		item = frappe.new_doc("Item")
-
-		for field_map in self.amz_setting.amazon_fields_map:
-			if field_map.use_to_find_item_code:
-				item.item_code = order_item[field_map.amazon_field]
-
-			if field_map.item_field:
-				setattr(item, field_map.item_field, order_item[field_map.amazon_field])
-
-		# Let's create the Item Group
-		# print(f"Creating item group for {amazon_item}")	
-		item.item_group = create_item_group(amazon_item)
-		item.brand = create_brand(amazon_item)
-		item.manufacturer = create_manufacturer(amazon_item)
-		item.insert(ignore_permissions=True)
-
-		create_item_price(amazon_item, item.item_code)
-		create_ecommerce_item(order_item, item.item_code)
-
-		return item.item_code
+		# {
+			# "ASIN": "B0CRPF819T",
+			# "BuyerInfo": {},
+			# "IsGift": "false",
+			# "IsTransparency": false,
+			# "ItemPrice": {
+				# "Amount": "38.99",
+				# "CurrencyCode": "USD"
+			# },
+			# "ItemTax": {
+				# "Amount": "2.73",
+				# "CurrencyCode": "USD"
+			# },
+			# "OrderItemId": "129478518919921",
+			# "ProductInfo": {
+				# "NumberOfItems": "1"
+			# },
+			# "PromotionDiscount": {
+				# "Amount": "0.00",
+				# "CurrencyCode": "USD"
+			# },
+			# "PromotionDiscountTax": {
+				# "Amount": "0.00",
+				# "CurrencyCode": "USD"
+			# },
+			# "QuantityOrdered": 1,
+			# "QuantityShipped": 1,
+			# "SellerSKU": "6109M",
+			# "TaxCollection": {
+				# "Model": "MarketplaceFacilitator",
+				# "ResponsibleParty": "Amazon Services, Inc."
+			# },
+			# "Title": "WARNE RED-DOT Low PRO Reflex Mount"
+		# }
+		listing = frappe.get_doc("Amazon SP Listing", order_item.get("SellerSKU"))
+		listing.sync_with_erp(self.amz_setting)
+		
 
 	def get_item_code(self, order_item) -> str:
 		for field_map in self.amz_setting.amazon_fields_map:
@@ -312,11 +237,19 @@ class AmazonRepository:
 			next_token = order_items_payload.get("NextToken")
 
 			for order_item in order_items_list:
+
 				if order_item.get("QuantityOrdered") > 0:
 					# print(f"Order Item before append: {order_item}")
+					item_code = self.get_item_code(order_item)
+					
+					if not item_code:
+						listing = frappe.get_doc("Amazon SP Listing", order_item.get("SellerSKU"))
+						listing.sync_with_erp(self.amz_setting)
+						item_code = order_item.get("SellerSKU")
+					
 					final_order_items.append(
 						{
-							"item_code": self.get_item_code(order_item),
+							"item_code": item_code,
 							"item_name": order_item.get("SellerSKU"),
 							"description": order_item.get("Title"),
 							"rate": order_item.get("ItemPrice", {}).get("Amount", 0),
@@ -435,6 +368,7 @@ class AmazonRepository:
 
 			so = frappe.new_doc("Sales Order")
 			so.amazon_order_id = order_id
+			so.po_no = order_id
 			so.marketplace_id = order.get("MarketplaceId")
 			so.customer = customer_name
 			so.delivery_date = delivery_date
@@ -467,6 +401,140 @@ class AmazonRepository:
 
 			return so.name
 
+	def create_sales_invoice(self, order) -> str | None:
+		def create_customer(order) -> str:
+			order_customer_name = ""
+			buyer_info = order.get("BuyerInfo")
+
+			if buyer_info and buyer_info.get("BuyerEmail"):
+				order_customer_name = buyer_info.get("BuyerEmail")
+			else:
+				order_customer_name = f"Buyer - {order.get('AmazonOrderId')}"
+
+			existing_customer_name = frappe.db.get_value(
+				"Customer", filters={"name": order_customer_name}, fieldname="name"
+			)
+
+			if existing_customer_name:
+				filters = [
+					["Dynamic Link", "link_doctype", "=", "Customer"],
+					["Dynamic Link", "link_name", "=", existing_customer_name],
+					["Dynamic Link", "parenttype", "=", "Contact"],
+				]
+
+				existing_contacts = frappe.get_list("Contact", filters)
+
+				if not existing_contacts:
+					new_contact = frappe.new_doc("Contact")
+					new_contact.first_name = order_customer_name
+					new_contact.append(
+						"links", {"link_doctype": "Customer", "link_name": existing_customer_name},
+					)
+					new_contact.insert()
+
+				return existing_customer_name
+			else:
+				new_customer = frappe.new_doc("Customer")
+				new_customer.customer_name = order_customer_name
+				new_customer.customer_group = self.amz_setting.customer_group
+				new_customer.territory = self.amz_setting.territory
+				new_customer.customer_type = self.amz_setting.customer_type
+				new_customer.save()
+
+				new_contact = frappe.new_doc("Contact")
+				new_contact.first_name = order_customer_name
+				new_contact.append("links", {"link_doctype": "Customer", "link_name": new_customer.name})
+
+				new_contact.insert()
+
+				return new_customer.name
+
+		def create_address(order, customer_name) -> str | None:
+			shipping_address = order.get("ShippingAddress")
+
+			if not shipping_address:
+				return
+			else:
+				make_address = frappe.new_doc("Address")
+				make_address.address_line1 = shipping_address.get("AddressLine1", "Not Provided")
+				make_address.city = shipping_address.get("City", "Not Provided")
+				make_address.state = shipping_address.get("StateOrRegion").title()
+				make_address.pincode = shipping_address.get("PostalCode")
+
+				filters = [
+					["Dynamic Link", "link_doctype", "=", "Customer"],
+					["Dynamic Link", "link_name", "=", customer_name],
+					["Dynamic Link", "parenttype", "=", "Address"],
+				]
+				existing_address = frappe.get_list("Address", filters)
+
+				for address in existing_address:
+					address_doc = frappe.get_doc("Address", address["name"])
+					if (
+						address_doc.address_line1 == make_address.address_line1
+						and address_doc.pincode == make_address.pincode
+					):
+						return address
+
+				make_address.append("links", {"link_doctype": "Customer", "link_name": customer_name})
+				make_address.address_type = "Shipping"
+				make_address.insert()
+
+		order_id = order.get("AmazonOrderId")
+		sinv = frappe.db.get_value("Sales Invoice", filters={"amazon_order_id": order_id}, fieldname="name")
+
+		if sinv:
+			return sinv
+		else:
+			# print(f"Getting order items for {order_id}")
+			items = self.get_order_items(order_id)
+
+			if not items:
+				return
+
+			customer_name = create_customer(order)
+			create_address(order, customer_name)
+
+			delivery_date = dateutil.parser.parse(order.get("LatestShipDate")).strftime("%Y-%m-%d") if order.get("LatestShipDate") else add_days(today(), 3)
+			posting_date = dateutil.parser.parse(order.get("PurchaseDate")).strftime("%Y-%m-%d") if order.get("PurchaseDate") else today()
+
+			sinv = frappe.new_doc("Sales Invoice")
+			sinv.amazon_order_id = order_id
+			# sinv.marketplace_id = order.get("MarketplaceId")
+			sinv.customer = customer_name
+			sinv.delivery_date = delivery_date
+			sinv.posting_date = posting_date
+			sinv.set_posting_time = 1
+			sinv.company = self.amz_setting.company
+			sinv.fulfillment_method = order.get("FulfillmentChannel") 
+
+			for item in items:
+				sinv.append("items", item)
+
+			taxes_and_charges = self.amz_setting.taxes_charges
+
+			if taxes_and_charges:
+				charges_and_fees = self.get_charges_and_fees(order_id)
+
+				for charge in charges_and_fees.get("charges"):
+					sinv.append("taxes", charge)
+
+				for fee in charges_and_fees.get("fees"):
+					sinv.append("taxes", fee)
+			try:
+				sinv.set_missing_values()
+				sinv.calculate_taxes_and_totals()
+				sinv.save(ignore_permissions=True)
+				sinv.submit()
+			except Exception as e:
+				title = f"Sales Order Creation Error for Order ID: {order_id}"
+				message = f"Error creating sales order: {e}\n"
+				message += f"Order Details: {order}\n"
+				message += f"Traceback: {frappe.get_traceback()}"
+				frappe.log_error( title=title, message=message)
+
+			return sinv.name
+
 	def get_orders(self, created_after) -> list:
 		orders = self.get_orders_instance()
 		order_statuses = [
@@ -490,21 +558,53 @@ class AmazonRepository:
 		)
 		# print(f"Found {len(orders_payload.get('Orders'))} orders")
 		sales_orders = []
-
+		page = 1
 		while True:
+			if not orders_payload:
+				break
 			orders_list = orders_payload.get("Orders")
 			next_token = orders_payload.get("NextToken")
 
 			if not orders_list or len(orders_list) == 0:
 				break
 
+			print(f"Found {len(orders_list)} orders in this batch (Page {page})")
+			page += 1
 			for order in orders_list:
+				# 'OrderStatus': 'Canceled',
+				if order.get("OrderStatus") == "Canceled":
+					print(f"Skipping canceled order {order.get('AmazonOrderId')}")
+					continue
 				# print(f"Let's create sales order {order}")
-
-
-				sales_order = self.create_sales_order(order)
-				if sales_order:
-					sales_orders.append(sales_order)
+				print(f"Processing Order ID: {order.get('AmazonOrderId')} | Date: {order.get('PurchaseDate')} | Channel: {order.get('FulfillmentChannel')}")
+				if order.get("AmazonOrderId") in ["111-2098714-7849831", "114-3263524-6333843", "113-8236680-9731404", "113-1268571-7165845"]:
+					print(f"Order Item: {order}")
+				try:
+					# For AFN orders we only create a sales invoice
+					# For MFN orders we create a sales order and sales invoice
+					if order.get("FulfillmentChannel") == "MFN":
+						print("""Creating sales order for MFN order""")
+						sales_order = self.create_sales_order(order)
+						sinv = make_sales_invoice(sales_order, ignore_permissions=True)
+						sinv.set_missing_values()
+						sinv.calculate_taxes_and_totals()
+						if sinv.items:
+							sinv.save(ignore_permissions=True)
+							sinv.submit()
+						
+						if sales_order:
+							sales_orders.append(sales_order)
+					
+					if order.get("FulfillmentChannel") == "AFN":	
+						self.create_sales_invoice(order)	
+					
+					frappe.db.commit()
+				except Exception as e:
+					frappe.db.rollback()
+					title = f"Error creating sales order for Amazon Order ID: {order.get('AmazonOrderId')}"
+					message = f"\nPayload: {order}\n"
+					message += f"Error: {str(e)}\nTraceback: {frappe.get_traceback()}"
+					frappe.log_error(title=title, message=message)
 
 			if not next_token:
 				break
@@ -515,6 +615,14 @@ class AmazonRepository:
 
 		return sales_orders
 
+	def get_order_by_id(self, order_id: str) -> dict | None:
+		orders_instance = self.get_orders_instance()
+		result = self.call_sp_api_method(
+			sp_api_method=orders_instance.get_order,
+			order_id=order_id
+		)
+		return result
+	
 	def search_listings_item(self, seller_id, sku_list = None, sort_by = None, sort_order = None, page_size = None, next_token = None) -> list:
 		listings = self.get_listings_instance()
 		listings_payload = self.call_sp_api_method(
@@ -559,7 +667,15 @@ def validate_amazon_sp_api_credentials(**args) -> None:
 		frappe.throw(msg)
 
 
-def get_orders(amz_setting_name, created_after) -> list:
+def get_orders(amz_setting_name=None, created_after=None) -> list:
+	if not amz_setting_name:
+		setting = frappe.get_last_doc('Amazon SP API Settings')
+		if setting:
+			amz_setting_name = setting.name
+	
+	if not created_after:
+		created_after = add_days(today(), -7)
+
 	ar = AmazonRepository(amz_setting_name)
 	return ar.get_orders(created_after)
 
@@ -569,4 +685,10 @@ def search_listings(amz_setting_name, seller_id, sku_list = None, sort_by = None
 
 def get_listings_item(amz_setting_name, seller_id, sku) -> dict:
 	ar = AmazonRepository(amz_setting_name)
-	return ar.get_listings_item(seller_id, sku)
+	item = ar.get_listings_item(seller_id, sku)
+	item.update({
+		"amazon_sp_api_settings": amz_setting_name,
+		"seller_id": seller_id,
+	})
+
+	return item
