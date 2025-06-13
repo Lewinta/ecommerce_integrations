@@ -589,8 +589,13 @@ class AmazonRepository:
 						sinv.set_missing_values()
 						sinv.calculate_taxes_and_totals()
 						if sinv.items:
-							sinv.save(ignore_permissions=True)
-							sinv.submit()
+							if name := frappe.db.exists("Sales Invoice", {"amazon_order_id": order.get("AmazonOrderId")}):
+								sinv = frappe.get_doc("Sales Invoice", name)
+							else:
+								sinv.save(ignore_permissions=True)
+
+							if sinv.docstatus == 0:
+								sinv.submit()
 						
 						if sales_order:
 							sales_orders.append(sales_order)
