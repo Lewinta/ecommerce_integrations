@@ -547,13 +547,12 @@ class AmazonRepository:
 			"Canceled",
 			"Unfulfillable",
 		]
-		fulfillment_channels = ["FBA", "SellerFulfilled"]
+
 
 		orders_payload = self.call_sp_api_method(
 			sp_api_method=orders.get_orders,
 			created_after=created_after,
 			order_statuses=order_statuses,
-			fulfillment_channels=fulfillment_channels,
 			max_results=10,
 		)
 		# print(f"Found {len(orders_payload.get('Orders'))} orders")
