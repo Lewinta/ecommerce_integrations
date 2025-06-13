@@ -679,7 +679,7 @@ def get_orders(amz_setting_name=None, created_after=None) -> list:
 			amz_setting_name = setting.name
 	
 	if not created_after:
-		created_after = add_days(today(), -7)
+		created_after = add_days(today(), -3) # Default to last 3 days
 
 	ar = AmazonRepository(amz_setting_name)
 	return ar.get_orders(created_after)
