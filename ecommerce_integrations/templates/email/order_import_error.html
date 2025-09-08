@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>{{ subject }}</title>
+<style>
+  /* keep styles simple; most email clients support these */
+  body { font-family: -apple-system, Segoe UI, Roboto, Helvetica, Arial, sans-serif; color:#111; margin:0; padding:0; }
+  .container { max-width: 720px; margin: 0 auto; padding: 24px; }
+  .card { border:1px solid #e5e7eb; border-radius: 12px; padding: 20px; box-shadow: 0 1px 2px rgba(0,0,0,0.03);}
+  h1 { font-size: 18px; margin: 0 0 12px; }
+  h2 { font-size: 16px; margin: 20px 0 10px; }
+  .muted { color:#6b7280; }
+  .row { display: flex; flex-wrap: wrap; gap: 12px; }
+  .pill { display:inline-block; padding:6px 10px; border-radius:999px; font-size:12px; border:1px solid #e5e7eb; margin-right: 6px;}
+  .pill--blue { background:#eff6ff; border-color:#bfdbfe; }
+  .pill--purple { background:#f5f3ff; border-color:#ddd6fe; }
+  .kv { display:grid; grid-template-columns: 160px 1fr; gap:8px 12px; font-size: 14px; }
+  .kv div { padding:4px 0; border-bottom: 1px dashed #eee; }
+  .table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  .table th, .table td { padding:10px 8px; border-bottom:1px solid #eee; vertical-align: top; }
+  .table th { text-align: left; font-weight: 600; }
+  .price { text-align: right; white-space: nowrap; }
+  .total { font-weight: 700; }
+  details { margin-top: 14px; border: 1px dashed #e5e7eb; border-radius: 10px; padding: 10px 12px; }
+  details > summary { cursor: pointer; font-weight: 600; }
+  pre { background: #0b1021; color:#e5e7eb; padding: 12px; border-radius: 8px; overflow:auto; font-size:12px; line-height:1.4; }
+  .error { color:#b91c1c; }
+  .footer { margin-top: 18px; font-size:12px; color:#6b7280; }
+</style>
+</head>
+<body>
+  <div class="container">
+    <div class="card">
+      <h1>{{ subject }}</h1>
+      <div class="row" style="margin-bottom:12px;">
+        <span class="pill pill--blue"><strong>Channel:</strong> {{ channel }}</span>
+        <span class="pill pill--purple"><strong>Fulfillment:</strong> {{ fulfillment }}</span>
+        {% if order.OrderStatus %}<span class="pill"><strong>Status:</strong> {{ order.OrderStatus }}</span>{% endif %}
+      </div>
+
+      <div class="row">
+        <!-- Left column -->
+        <div style="flex:1; min-width:280px;">
+          <div class="kv">
+            <div class="muted">Order ID</div><div>{{ order_id }}</div>
+            {% if marketplace %}
+              <div class="muted">Marketplace</div><div>{{ marketplace }}</div>
+            {% endif %}
+            {% if buyer_email %}
+              <div class="muted">Buyer Email</div><div>{{ buyer_email }}</div>
+            {% endif %}
+          </div>
+        </div>
+
+        <!-- Right column -->
+        <div style="flex:1; min-width:280px;">
+          <div class="kv">
+            <div class="muted">Purchase Date</div><div>{{ purchase_date_local }}</div>
+            {% if ship_level %}
+              <div class="muted">Ship Service Level</div><div>{{ ship_level }}</div>
+            {% endif %}
+            {% if ship_to %}
+              <div class="muted">Ship To</div><div>{{ ship_to }}</div>
+            {% endif %}
+          </div>
+        </div>
+      </div>
+
+      <h2>Items</h2>
+      <table class="table" role="table" aria-label="Items">
+        <thead>
+          <tr>
+            <th>SKU</th>
+            <th>Title</th>
+            <th class="price">Qty</th>
+            <th class="price">Price</th>
+            <th class="price">Tax</th>
+            <th class="price">Line Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% set currency = order.OrderTotal.CurrencyCode if order.OrderTotal else 'USD' %}
+          {% set grand_total = 0 %}
+          {% for it in (order.OrderItems or []) %}
+            {% set qty = (it.QuantityShipped or it.QuantityOrdered or 0) | int %}
+            {% set price = (it.ItemPrice.Amount if it.ItemPrice else 0) | float %}
+            {% set tax = (it.ItemTax.Amount if it.ItemTax else 0) | float %}
+            {% set line_total = qty * price + tax %}
+            {% set grand_total = grand_total + line_total %}
+            <tr>
+              <td><code>{{ it.SellerSKU }}</code></td>
+              <td>{{ it.Title }}</td>
+              <td class="price">{{ qty }}</td>
+              <td class="price">{{ price | float | round(2) }} {{ currency }}</td>
+              <td class="price">{{ tax | float | round(2) }} {{ currency }}</td>
+              <td class="price">{{ line_total | float | round(2) }} {{ currency }}</td>
+            </tr>
+          {% endfor %}
+          <tr>
+            <td colspan="5" class="price total">Grand Total</td>
+            <td class="price total">$ 
+              {% if order.OrderTotal and order.OrderTotal.Amount %}
+                {{ (order.OrderTotal.Amount | float) | round(2) }} {{ currency }}
+              {% else %}
+                {{ grand_total | float | round(2) }} {{ currency }}
+              {% endif %}
+            </td>
+          </tr>
+        </tbody>
+      </table>
+
+      {% if error_message or traceback %}
+      <h2 class="error">Error</h2>
+      <p class="error"><strong>{{ error_message }}</strong></p>
+      {% endif %}
+
+      <details>
+        <summary>Show Error & Traceback</summary>
+        {% if traceback %}<pre>{{ traceback }}</pre>{% endif %}
+      </details>
+
+      <details>
+        <summary>Show Raw Payload (JSON)</summary>
+        <pre>{{ payload_pretty }}</pre>
+      </details>
+
+      <div class="footer">
+        This is an automated message from ERPNext · {{ now_str }}
+      </div>
+    </div>
+  </div>
+</body>
+</html>

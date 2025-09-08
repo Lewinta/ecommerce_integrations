@@ -4,23 +4,36 @@
 
 import time
 import urllib
-from frappe.utils import add_days, today
+from frappe.utils import add_days, today, flt
 import dateutil
 import frappe
 from frappe import _
 from erpnext.selling.doctype.sales_order.sales_order import make_sales_invoice
+from ecommerce_integrations.utils.email_report import notify_users
+
 from ecommerce_integrations.amazon.doctype.amazon_sp_api_settings.amazon_sp_api import (
 	SPAPI,
 	CatalogItems,
 	Finances,
 	Orders,
 	Listings,
+	Returns,
 	SPAPIError,
 )
 from ecommerce_integrations.amazon.doctype.amazon_sp_api_settings.amazon_sp_api_settings import (
 	AmazonSPAPISettings,
 )
 
+VALID_ORDER_STATUSES = [
+	# "PendingAvailability",
+	# "Pending",
+	"Unshipped",
+	"PartiallyShipped",
+	"Shipped",
+	"InvoiceUnconfirmed",
+	# "Canceled",
+	"Unfulfillable",
+]
 
 class AmazonRepository:
 	def __init__(self, amz_setting: str | AmazonSPAPISettings) -> None:
@@ -153,7 +166,7 @@ class AmazonRepository:
 	def get_orders_instance(self) -> Orders:
 		return Orders(**self.instance_params)
 
-	def create_item(self, order_item) -> str:
+	def ete_item(self, order_item) -> str:
 		# {
 			# "ASIN": "B0CRPF819T",
 			# "BuyerInfo": {},
@@ -174,7 +187,7 @@ class AmazonRepository:
 			# "PromotionDiscount": {
 				# "Amount": "0.00",
 				# "CurrencyCode": "USD"
-			# },
+			# },	
 			# "PromotionDiscountTax": {
 				# "Amount": "0.00",
 				# "CurrencyCode": "USD"
@@ -191,25 +204,35 @@ class AmazonRepository:
 		listing = frappe.get_doc("Amazon SP Listing", order_item.get("SellerSKU"))
 		listing.sync_with_erp(self.amz_setting)
 		
-
 	def get_item_code(self, order_item) -> str:
 		for field_map in self.amz_setting.amazon_fields_map:
+			order_item_code = order_item[field_map.amazon_field]
+			if order_item_code == "VTX1432-SRP-L":
+				order_item_code = "VTX1432-SRP-LARGE"
+				
 			if field_map.use_to_find_item_code:
 				item_code = frappe.db.get_value(
 					"Item",
-					filters={field_map.item_field: order_item[field_map.amazon_field]},
+					filters={field_map.item_field: order_item_code},
 					fieldname="item_code",
 				)
+				if name := frappe.db.exists("Item", order_item_code):   
+					item_code = name
 
 				if item_code:
 					return item_code
+				
+				elif order_item_code and order_item_code[-3:] == "-FN" and frappe.db.exists("Item", order_item_code.replace("-FN", "")):
+					item_code = order_item_code.replace("-FN", "")
+					return item_code
+				
 				elif not self.amz_setting.create_item_if_not_exists:
 					field_label = frappe.get_meta("Item").get_label(field_map.item_field)
 					frappe.throw(
 						_("Item not found with {0} ({1}) = {2}.").format(
 							frappe.bold(field_label),
 							field_map.item_field,
-							frappe.bold(order_item[field_map.amazon_field]),
+							frappe.bold(order_item_code),
 						)
 					)
 
@@ -257,9 +280,33 @@ class AmazonRepository:
 							"stock_uom": "Nos",
 							"warehouse": warehouse,
 							"conversion_factor": 1.0,
+							"tax_amount": order_item.get("ItemTax", {}).get("Amount", 0),
 						}
 					)
 
+			if not next_token:
+				break
+
+			order_items_payload = self.call_sp_api_method(
+				sp_api_method=orders.get_order_items, order_id=order_id, next_token=next_token,
+			)
+
+		return final_order_items
+
+	def get_order_items_raw(self, order_id) -> list:
+		orders = self.get_orders_instance()
+		order_items_payload = self.call_sp_api_method(
+			sp_api_method=orders.get_order_items, order_id=order_id
+		)
+
+		final_order_items = []
+
+		while True:
+			order_items_list = order_items_payload.get("OrderItems")
+			next_token = order_items_payload.get("NextToken")
+
+			for order_item in order_items_list:	
+				final_order_items.append(order_item)
 			if not next_token:
 				break
 
@@ -375,13 +422,16 @@ class AmazonRepository:
 			so.transaction_date = transaction_date
 			so.company = self.amz_setting.company
 			so.fulfillment_method = order.get("FulfillmentChannel") 
-
+			total_tax = .00
+			
 			for item in items:
 				so.append("items", item)
+				total_tax += frappe.utils.flt(item.get("tax_amount", 0))
 
 			taxes_and_charges = self.amz_setting.taxes_charges
 
 			if taxes_and_charges:
+
 				charges_and_fees = self.get_charges_and_fees(order_id)
 
 				for charge in charges_and_fees.get("charges"):
@@ -389,6 +439,14 @@ class AmazonRepository:
 
 				for fee in charges_and_fees.get("fees"):
 					so.append("taxes", fee)
+				
+				if total_tax > 0:
+					so.append("taxes", {
+						"charge_type": "Actual",
+						"account_head": self.get_account("Tax"),
+						"tax_amount": total_tax,
+						"description": "Total Item Tax"
+					})
 			try:
 				so.insert(ignore_permissions=True)
 				so.submit()
@@ -397,7 +455,7 @@ class AmazonRepository:
 					title=f"Sales Order Creation Error for Order ID: {order_id}",
 					message=f"Error creating sales order: {e}",
 				)
-				
+				notify_users(order, e, frappe.get_traceback(), az=self)
 
 			return so.name
 
@@ -508,7 +566,13 @@ class AmazonRepository:
 			sinv.company = self.amz_setting.company
 			sinv.fulfillment_method = order.get("FulfillmentChannel") 
 
+			if sinv.fulfillment_method == "AFN":
+				sinv.update_stock = 1
+				sinv.set_warehouse = 'Amazon FBA Stock - KO'
+
 			for item in items:
+				if sinv.fulfillment_method == "AFN":
+					item["warehouse"] = sinv.set_warehouse
 				sinv.append("items", item)
 
 			taxes_and_charges = self.amz_setting.taxes_charges
@@ -516,14 +580,21 @@ class AmazonRepository:
 			if taxes_and_charges:
 				charges_and_fees = self.get_charges_and_fees(order_id)
 
-				for charge in charges_and_fees.get("charges"):
-					sinv.append("taxes", charge)
+				# for charge in charges_and_fees.get("charges"):
+				# 	sinv.append("taxes", charge)
 
 				for fee in charges_and_fees.get("fees"):
 					sinv.append("taxes", fee)
 			try:
 				sinv.set_missing_values()
 				sinv.calculate_taxes_and_totals()
+				if self.amz_setting.include_payment:
+					sinv.is_pos = 1
+					sinv.set("payments", [])
+					sinv.append("payments", {
+						"mode_of_payment": self.amz_setting.mode_of_payment or "Amazon Pay",
+						"amount": sinv.grand_total,
+					})
 				sinv.save(ignore_permissions=True)
 				sinv.submit()
 			except Exception as e:
@@ -537,26 +608,18 @@ class AmazonRepository:
 
 	def get_orders(self, created_after) -> list:
 		orders = self.get_orders_instance()
-		order_statuses = [
-			"PendingAvailability",
-			"Pending",
-			"Unshipped",
-			"PartiallyShipped",
-			"Shipped",
-			"InvoiceUnconfirmed",
-			"Canceled",
-			"Unfulfillable",
-		]
 
+		fulfillment_channels = ["AFN", "MFN"]
+		max_results = 10
 
 		orders_payload = self.call_sp_api_method(
 			sp_api_method=orders.get_orders,
 			created_after=created_after,
-			order_statuses=order_statuses,
-			max_results=10,
+			order_statuses=VALID_ORDER_STATUSES,
+			fulfillment_channels=fulfillment_channels,
+			max_results=max_results,
 		)
 		# print(f"Found {len(orders_payload.get('Orders'))} orders")
-		sales_orders = []
 		page = 1
 		while True:
 			if not orders_payload:
@@ -570,54 +633,144 @@ class AmazonRepository:
 			print(f"Found {len(orders_list)} orders in this batch (Page {page})")
 			page += 1
 			for order in orders_list:
-				# 'OrderStatus': 'Canceled',
-				if order.get("OrderStatus") == "Canceled":
-					print(f"Skipping canceled order {order.get('AmazonOrderId')}")
-					continue
-				# print(f"Let's create sales order {order}")
-				print(f"Processing Order ID: {order.get('AmazonOrderId')} | Date: {order.get('PurchaseDate')} | Channel: {order.get('FulfillmentChannel')}")
-				if order.get("AmazonOrderId") in ["111-2098714-7849831", "114-3263524-6333843", "113-8236680-9731404", "113-1268571-7165845"]:
-					print(f"Order Item: {order}")
-				try:
-					# For AFN orders we only create a sales invoice
-					# For MFN orders we create a sales order and sales invoice
-					if order.get("FulfillmentChannel") == "MFN":
-						print("""Creating sales order for MFN order""")
-						sales_order = self.create_sales_order(order)
-						sinv = make_sales_invoice(sales_order, ignore_permissions=True)
-						sinv.set_missing_values()
-						sinv.calculate_taxes_and_totals()
-						if sinv.items:
-							if name := frappe.db.exists("Sales Invoice", {"amazon_order_id": order.get("AmazonOrderId")}):
-								sinv = frappe.get_doc("Sales Invoice", name)
-							else:
-								sinv.save(ignore_permissions=True)
-
-							if sinv.docstatus == 0:
-								sinv.submit()
-						
-						if sales_order:
-							sales_orders.append(sales_order)
-					
-					if order.get("FulfillmentChannel") == "AFN":	
-						self.create_sales_invoice(order)	
-					
-					frappe.db.commit()
-				except Exception as e:
-					frappe.db.rollback()
-					title = f"Error creating sales order for Amazon Order ID: {order.get('AmazonOrderId')}"
-					message = f"\nPayload: {order}\n"
-					message += f"Error: {str(e)}\nTraceback: {frappe.get_traceback()}"
-					frappe.log_error(title=title, message=message)
-
-			if not next_token:
-				break
+				self.sync_order_with_erp(order)
+				if not next_token:
+					break
 
 			orders_payload = self.call_sp_api_method(
-				sp_api_method=orders.get_orders, created_after=created_after, next_token=next_token,
+				sp_api_method=orders.get_orders,
+				created_after=created_after,
+				order_statuses=VALID_ORDER_STATUSES,
+				fulfillment_channels=fulfillment_channels,
+				max_results=max_results,
+				next_token=next_token,
 			)
+			# let's wait a bit to avoid hitting API rate limits
+			time.sleep(2)
 
-		return sales_orders
+		return []
+
+	def get_returns(self, created_since=None, created_until=None):
+		"""Retrieve return items from Amazon SP API."""
+		try:
+			returns_client = self.get_returns_instance()
+			response = self.call_sp_api_method(
+				sp_api_method=returns_client.list_return_items,
+				created_since=created_since,
+				created_until=created_until
+			)
+			return response
+		except Exception:
+			frappe.log_error(frappe.get_traceback(), "Amazon Returns Fetch Error")
+			return []
+
+	@frappe.whitelist()
+	def sync_order_with_erp(self, order: str) -> str | None:
+		try:
+			# 'OrderStatus': 'Canceled',
+			if order.get("OrderStatus") not in VALID_ORDER_STATUSES:
+				print(f"Skipping order {order.get('AmazonOrderId')} with status {order.get('OrderStatus')}") 
+				frappe.msgprint(
+					_(
+						f"Skipping order {order.get('AmazonOrderId')} with status {order.get('OrderStatus')}"
+					)
+				)
+				return False
+			
+			# For AFN orders we only create a sales invoice
+			# For MFN orders we create a sales order and sales invoice
+			if order.get("FulfillmentChannel") == "MFN":
+				print("""Creating sales order for MFN order""")
+				sales_order = self.create_sales_order(order)
+				sinv = make_sales_invoice(sales_order, ignore_permissions=True)
+				delivery_date = dateutil.parser.parse(order.get("LatestShipDate")).strftime("%Y-%m-%d") if order.get("LatestShipDate") else add_days(today(), 3)
+				posting_date = dateutil.parser.parse(order.get("PurchaseDate")).strftime("%Y-%m-%d") if order.get("PurchaseDate") else today()
+				sinv.update({
+					"posting_date": posting_date,
+					"set_posting_time": 1,
+					"due_date": delivery_date,
+					"allocate_advances_automatically": 1,
+					"only_include_allocated_payments": 1,
+				})
+				sinv.set_missing_values()
+				sinv.calculate_taxes_and_totals()
+				if sinv.items:
+					if name := frappe.db.exists("Sales Invoice", {"amazon_order_id": order.get("AmazonOrderId")}):
+						sinv = frappe.get_doc("Sales Invoice", name)
+					else:
+						sinv.save(ignore_permissions=True)
+
+					print(f"Created Sales Invoice {sinv.name} for Order ID: {order.get('AmazonOrderId')}")
+
+					if self.amz_setting.include_payment:
+						sinv.is_pos = 1
+						sinv.set("payments", [])
+						sinv.append("payments", {
+							"mode_of_payment": self.amz_setting.mode_of_payment or "Amazon Pay",
+							"amount": sinv.grand_total,
+						})
+						sinv.save()
+
+					if sinv.docstatus == 0:
+						sinv.submit()
+				
+			
+			if order.get("FulfillmentChannel") == "AFN":	
+				self.create_sales_invoice(order)
+
+			if bucket_name := frappe.db.exists("Amazon Order Bucket", order.get("AmazonOrderId")):
+				frappe.db.set_value(
+					"Amazon Order Bucket", bucket_name, "status", "Completed"
+				)
+			
+			return True	
+			
+		except Exception as e:
+			frappe.db.rollback()
+			title = f"Error creating sales order for Amazon Order ID: {order.get('AmazonOrderId')}"
+			message = ""
+			message = f"\nPayload: {order}\n"
+			message = f"\nPayload: {order}\n"
+			message += f"Error: {str(e)}\nTraceback: {frappe.get_traceback()}"
+			frappe.log_error(title=title, message=message)
+			if self.amz_setting.notify_to:
+				notify_users(order, e, frappe.get_traceback(), az=self)
+			return False
+
+	def fetch_orders_list(self, created_after=None, limit=500, start=0) -> list:
+		orders = self.get_orders_instance()
+		fulfillment_channels = ["AFN", "MFN"]
+		collected_orders = []
+		page_token = None
+
+		while True:
+			params = {
+				"created_after": created_after or add_days(today(), -3),
+				"order_statuses": VALID_ORDER_STATUSES,
+				"fulfillment_channels": fulfillment_channels,
+				"max_results": 10,  # API hard-limit
+			}
+			if page_token:
+				params["next_token"] = page_token
+
+			result = self.call_sp_api_method(orders.get_orders, **params)
+			if not result:
+				break
+			
+			batch = result.get("Orders", [])
+			collected_orders.extend(batch)
+
+			# If we have enough orders for the requested page, stop early
+			if len(collected_orders) >= (start + limit):
+				break
+
+			page_token = result.get("NextToken")
+			if not page_token:
+				break
+			# Let's wait a bit to avoid hitting API rate limits
+			time.sleep(5)
+
+		return collected_orders[start : start + limit]
 
 	def get_order_by_id(self, order_id: str) -> dict | None:
 		orders_instance = self.get_orders_instance()
@@ -626,6 +779,46 @@ class AmazonRepository:
 			order_id=order_id
 		)
 		return result
+	
+	def update_fbm_stock(self, seller_id: str, sku: str, product_type: str, quantity: int):
+		"""
+		Update stock quantity for an FBM (MFN) listing via the Amazon Listings Items API.
+		"""
+		listings = self.get_listings_instance()
+
+		payload = {
+			"productType": product_type,
+			"patches": [
+				{
+					"op": "replace",
+					"path": "/attributes/fulfillment_availability",
+					"value": [
+						{
+							"fulfillment_channel_code": "DEFAULT", 
+							"quantity": int(quantity)
+						}
+					]
+				}
+			]
+		}
+
+		try:
+			result = listings.patch_listings_item(
+				seller_id=seller_id,
+				sku=sku,
+				listings_payload=payload
+			)
+
+			if result.get("errors"):
+				frappe.log_error(
+					title=f"Amazon FBM Stock Update Failed for SKU {sku}",
+					message=f"Error updating stock for SKU {sku}: {result.get('errors')} \nPayload: {payload}"
+				)
+			return result
+		except Exception as e:
+			msg = f"payload: {payload}\nError: {str(e)}\nTraceback: {frappe.get_traceback()}"
+			frappe.log_error(f"Amazon FBM Stock Update Failed for SKU {sku}", msg)
+			frappe.throw(f"Failed to update stock for SKU {sku}: {e}")
 	
 	def search_listings_item(self, seller_id, sku_list = None, sort_by = None, sort_order = None, page_size = None, next_token = None) -> list:
 		listings = self.get_listings_instance()
@@ -646,6 +839,9 @@ class AmazonRepository:
 	
 	def get_listings_instance(self) -> Listings:
 		return Listings(**self.instance_params)
+
+	def get_returns_instance(self) -> Returns:
+		return Returns(**self.instance_params)
 
 
 def validate_amazon_sp_api_credentials(**args) -> None:
@@ -696,3 +892,36 @@ def get_listings_item(amz_setting_name, seller_id, sku) -> dict:
 	})
 
 	return item
+
+def get_amazon_orders():
+	ar = AmazonRepository('2n7sn0hlgc')
+	try:
+		orders = ar.fetch_orders_list()
+		for order in orders:
+			if frappe.db.exists("Amazon Order Bucket", order["AmazonOrderId"]):
+				# If the order was cancelled, update the status
+				if order["OrderStatus"] == "Canceled":
+					doc = frappe.get_doc("Amazon Order Bucket", order["AmazonOrderId"])
+					doc.order_status = "Canceled"
+					doc.save()
+				else:
+					continue
+			# Doesn't exist, create a new one
+			if order["OrderStatus"] in ["Canceled", "Pending"]:
+				continue
+			doc = frappe.new_doc("Amazon Order Bucket")
+			doc.update(
+				{
+					"order_id": order["AmazonOrderId"],
+					"fulfillment_channel":order["FulfillmentChannel"],
+					"order_date":str(order["PurchaseDate"]).split('T')[0],
+					"payload":frappe.as_json(order),
+					"order_status": order['OrderStatus']
+				}
+			)
+			doc.save()
+	except Exception as e:
+		frappe.log_error(
+			title="Error fetching Amazon orders",
+			message=f"Error: {str(e)}\nTraceback: {frappe.get_traceback()}"
+		)

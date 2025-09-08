@@ -285,20 +285,26 @@ class SPAPI(object):
 	def make_request(
 		self, method: str = "GET", append_to_base_uri: str = "", params: dict = None, data: dict = None,
 	) -> dict:
+		headers = self.get_headers()
 		if isinstance(params, dict):
 			params = Util.remove_empty(params)
 		if isinstance(data, dict):
 			data = Util.remove_empty(data)
+		
+		if method.upper() in ["PATCH", "POST", "PUT"]:
+			headers["Content-Type"] = "application/json; charset=utf-8"
 
 		url = self.endpoint + self.BASE_URI + append_to_base_uri
+		# print(f"Making request to: {url} with method: {method} and params: {params} and data: {data} and headers: {headers}")
 		response = request(
 			method=method,
 			url=url,
 			params=params,
-			data=data,
-			headers=self.get_headers(),
+			json=data,
+			headers=headers,
 			auth=self.get_auth(),
 		)
+		# print(f"Response status code: {response.status_code}, Response text: {response.text}")
 		return response.json()
 
 	def list_to_dict(self, key: str, values: list, data: dict) -> None:
@@ -354,14 +360,15 @@ class Orders(SPAPI):
 			# LastUpdatedBefore=last_updated_before,
 			# BuyerEmail=buyer_email,
 			# SellerOrderId=seller_order_id,
-			MaxResultsPerPage=max_results,
+			MaxResultsPerPage=100,
 			NextToken=next_token,
 			# ActualFulfillmentSupplySourceId=actual_fulfillment_supply_source_id,
 			# IsISPU=is_ispu,
 			# StoreChainStoreIddata=store_chain_store_id,
 		)
 
-		self.list_to_dict("OrderStatuses", order_statuses, data)
+		
+		# self.list_to_dict("OrderStatuses", order_statuses, data)
 		self.list_to_dict("MarketplaceIds", marketplace_ids, data)
 		self.list_to_dict("FulfillmentChannels", fulfillment_channels, data)
 		self.list_to_dict("PaymentMethods", payment_methods, data)
@@ -372,8 +379,8 @@ class Orders(SPAPI):
 			marketplace_ids = [self.marketplace_id]
 			data["MarketplaceIds"] = marketplace_ids
 		
-		# data["FulfillmentChannels"] = ['AFN']
-
+		data["OrderStatuses"] = "Unshipped,PartiallyShipped,Shipped,InvoiceUnconfirmed,Unfulfillable"
+		
 		print(f"params: {data}")
 		return self.make_request(params=data)
 
@@ -424,7 +431,7 @@ class Listings(SPAPI):
 		append_to_base_uri = f"/items/{seller_id}"
 		data = dict(
 			marketplaceIds=marketplace_ids or [self.marketplace_id],
-			includeData=["summaries", "fulfillmentAvailability"],
+			includedData="attributes,summaries,fulfillmentAvailability",
 			nextToken=next_token,
 			sortBy=sort_by,
 			sortOrder=sort_order,
@@ -446,7 +453,91 @@ class Listings(SPAPI):
 		data = dict(
 			marketplaceIds=marketplace_ids or [self.marketplace_id],
 			issueLocale=issue_locale,
-			includeData=["attributes"]
+			includedData="attributes,summaries,fulfillmentAvailability"
+		)
+		return dict(payload=self.make_request(method="GET", append_to_base_uri=append_to_base_uri, params=data))
+
+	def patch_listings_item(
+		self,
+		seller_id: str,
+		sku: str,
+		listings_payload: dict,
+		marketplace_ids: list = None,
+		issue_locale: str = "en_US",
+	) -> dict:
+		"""Partially updates an existing listing"""
+		append_to_base_uri = f"/items/{seller_id}/{sku}"
+		data = dict(
+			marketplaceIds=marketplace_ids or [self.marketplace_id],
+			issueLocale=issue_locale,
+		)
+		
+		return self.make_request(
+			method="PATCH",
+			append_to_base_uri=append_to_base_uri,
+			params=data,
+			data=listings_payload,
+		)
+
+
+class Returns(SPAPI):
+	""" Amazon Returns API """
+
+	BASE_URI = "/returns/2021-01-25"
+
+	def list_return_items(
+		self,
+		marketplace_ids: list = None,
+		created_since: str = None,
+		created_until: str = None,
+		status: str = None,
+		seller_fulfillment_order_id: str = None,
+		next_token: str = None
+	) -> dict:
+		"""
+		Retrieves return items based on search criteria.
+
+		:param marketplace_ids: List of marketplace IDs (default: self.marketplace_id)
+		:param created_since: ISO 8601 date string, filter returns created after this date
+		:param created_until: ISO 8601 date string, filter returns created before this date
+		:param status: Optional filter for return status ("Pending", "Approved", "Closed")
+		:param seller_fulfillment_order_id: Optional filter for specific order
+		:param next_token: For pagination
+		"""
+		data = dict(
+			marketplaceIds=marketplace_ids or [self.marketplace_id],
+			createdSince=created_since,
+			createdUntil=created_until,
+			status=status,
+			sellerFulfillmentOrderId=seller_fulfillment_order_id,
+			nextToken=next_token
+		)
+
+		# Remove None values so we don't send empty params to SP-API
+		data = {k: v for k, v in data.items() if v is not None}
+
+		return dict(
+			payload=self.make_request(
+				method="GET",
+				append_to_base_uri="/returnItems",
+				params=data
+			)
+		)
+
+
+	def get_listings_item(
+		self,
+		seller_id: str,
+		sku: str,
+		marketplace_ids: list = None,
+		issue_locale: str = "en_US",
+	) -> dict:
+		"""Returns a listing by item ID"""
+		append_to_base_uri = f"/items/{seller_id}/{sku}"
+		data = dict(
+			marketplaceIds=marketplace_ids or [self.marketplace_id],
+			issueLocale=issue_locale,
+			includedData="attributes,summaries,fulfillmentAvailability"
 		)
 		return dict(payload=self.make_request(method="GET", append_to_base_uri=append_to_base_uri, params=data))
 	

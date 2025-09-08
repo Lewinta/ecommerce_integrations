@@ -8,7 +8,10 @@
  "field_order": [
   "marketplace_id",
   "seller_id",
+  "fulfillment_channel",
+  "column_break_mi0wc",
   "sku",
+  "asin",
   "amazon_sp_api_settings"
  ],
  "fields": [
@@ -20,25 +23,45 @@
   {
    "fieldname": "seller_id",
    "fieldtype": "Data",
+   "in_list_view": 1,
    "label": "Seller ID"
   },
   {
    "fieldname": "sku",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "SKU",
    "options": "Amazon SP Listing"
   },
   {
    "fieldname": "amazon_sp_api_settings",
    "fieldtype": "Link",
+   "in_list_view": 1,
    "label": "Amazon SP API Settings",
    "options": "Amazon SP API Settings"
+  },
+  {
+   "fieldname": "fulfillment_channel",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "label": "Fulfillment Channel",
+   "options": "\nFBA\nFBM"
+  },
+  {
+   "fieldname": "column_break_mi0wc",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "asin",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "ASIN"
   }
  ],
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-03-18 13:38:38.131607",
+ "modified": "2025-06-26 23:35:10.801928",
  "modified_by": "Administrator",
  "module": "Amazon",
  "name": "Item Amazon SP Listing",

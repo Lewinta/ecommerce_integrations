@@ -38,7 +38,9 @@
   "column_break_4",
   "enable_sync",
   "max_retry_limit",
-  "is_old_data_migrated"
+  "is_old_data_migrated",
+  "errors_section",
+  "notify_to"
  ],
  "fields": [
   {
@@ -260,10 +262,21 @@
    "fieldname": "sync_listings",
    "fieldtype": "Button",
    "label": "Sync Listings"
+  },
+  {
+   "fieldname": "errors_section",
+   "fieldtype": "Section Break",
+   "label": "Errors"
+  },
+  {
+   "description": "List of employees to be notified when an order fails (one email per line)",
+   "fieldname": "notify_to",
+   "fieldtype": "Small Text",
+   "label": "Notify To"
   }
  ],
  "links": [],
- "modified": "2025-05-23 11:46:51.449785",
+ "modified": "2025-08-26 01:52:55.472631",
  "modified_by": "Administrator",
  "module": "Amazon",
  "name": "Amazon SP API Settings",

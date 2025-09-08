@@ -10,6 +10,7 @@
   "sku",
   "asin",
   "item_name",
+  "fulfillment_channel",
   "amazon_sp_api_settings",
   "column_break_g1iqh",
   "fn_sku",
@@ -17,6 +18,10 @@
   "marketplace_id",
   "image",
   "seller_id",
+  "inventory_section",
+  "available_qty",
+  "inventory_cb_column",
+  "listed_qty",
   "raw_tab",
   "summaries",
   "summaries_sb"
@@ -86,13 +91,39 @@
    "fieldtype": "Link",
    "label": "Amazon SP",
    "options": "Amazon SP API Settings"
+  },
+  {
+   "fieldname": "fulfillment_channel",
+   "fieldtype": "Select",
+   "label": "Fulfillment Channel",
+   "options": "\nFBA\nFBM"
+  },
+  {
+   "fieldname": "available_qty",
+   "fieldtype": "Float",
+   "label": "Available Qty",
+   "read_only": 1
+  },
+  {
+   "fieldname": "inventory_section",
+   "fieldtype": "Section Break",
+   "label": "Inventory"
+  },
+  {
+   "fieldname": "inventory_cb_column",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "listed_qty",
+   "fieldtype": "Data",
+   "label": "Listed Qty"
   }
  ],
  "image_field": "image",
  "index_web_pages_for_search": 1,
  "is_virtual": 1,
  "links": [],
- "modified": "2025-05-31 19:59:08.973191",
+ "modified": "2025-06-27 18:57:13.412725",
  "modified_by": "Administrator",
  "module": "Amazon",
  "name": "Amazon SP Listing",

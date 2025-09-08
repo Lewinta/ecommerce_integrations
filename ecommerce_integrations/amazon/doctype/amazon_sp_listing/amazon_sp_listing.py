@@ -4,8 +4,12 @@
 # import frappe
 from frappe.model.document import Document
 import frappe
+from frappe import _
 import json
 from six import string_types
+from woocommerce_fusion.tasks.stock_update import get_item_projected_qty
+from ecommerce_integrations.amazon.doctype.amazon_sp_api_settings.amazon_repository import AmazonRepository
+
 class AmazonSPListing(Document):
 
 	field_mappings = {
@@ -25,7 +29,6 @@ class AmazonSPListing(Document):
 			seller_id=self.seller_id,
 			sku=self.name
 		)
-
 		super(Document, self).__init__(decode(response))
 		
 
@@ -59,9 +62,11 @@ class AmazonSPListing(Document):
 		
 		if self.amazon_sp_api_settings:
 			row = {
+				"fulfillment_channel": self.fulfillment_channel,
 				"marketplace_id": self.marketplace_id,
 				"seller_id": self.seller_id,
 				"sku": self.sku,
+				"asin": self.asin,
 				"amazon_sp_api_settings": self.amazon_sp_api_settings,
 			}
 			# Now let's check if the row already exists
@@ -83,6 +88,14 @@ class AmazonSPListing(Document):
 		
 		return item.save()
 
+	@frappe.whitelist()
+	def sync_inventory(self, args=None):
+		"""
+		Update stock quantity for an FBM (MFN) listing via the Amazon Listings Items API.
+		"""
+		az = AmazonRepository(self.amz_setting_name)
+		return az.update_fbm_stock(self.seller_id, self.sku, self.product_type, self.available_qty)
+		
 	@staticmethod
 	def get_list(args):
 		from ecommerce_integrations.amazon.doctype.amazon_sp_api_settings.amazon_repository import search_listings
@@ -151,10 +164,18 @@ class AmazonSPListing(Document):
 		pass
 	
 def decode(item):
-	summaries = extract_data(item)
+	
+	summaries, availability = extract_data(item)
+
 	if not summaries:
 		frappe.throw(f"Invalid item data: {item.get('sku')}")
 	
+	fulfillment_channel = "FBM" if availability and availability.get("fulfillmentChannelCode") == "DEFAULT" else "FBA"
+	if not item.get("amazon_sp_api_settings"):
+		return frappe._dict({})
+	settings = frappe.get_doc("Amazon SP API Settings", item.get("amazon_sp_api_settings"))
+	available_qty = get_item_projected_qty(item.get("sku"),settings.company)
+
 	return frappe._dict({
 		"name": item.get("sku"),
 		"amazon_sp_api_settings": item.get("amazon_sp_api_settings"),
@@ -162,22 +183,56 @@ def decode(item):
 		"asin": summaries.get("asin"),
 		"sku": item.get("sku"),
 		"fn_sku": summaries.get("fnSku"),
+		"fulfillment_channel": fulfillment_channel,
 		"item_name": summaries.get("itemName"),
 		"image": summaries.get('mainImage').get("link"),
 		"product_type": summaries.get("productType"),
 		"marketplace_id": summaries.get("marketplaceId"),
+		"available_qty": available_qty if available_qty > 0 else 0,
+		"listed_qty": get_listed_qty(item),
 		"summaries": frappe.as_json(item),
 		"creation": summaries.get('createdDate').replace("T", " ").replace("Z", ""),
 		"modified": summaries.get('lastUpdatedDate').replace("T", " ").replace("Z", ""),
 	})
 
+def get_listed_qty(item):
+	listed_qty = 0
+	for row in item.get("fulfillmentAvailability", []):
+		if row.get("fulfillmentChannelCode") == "DEFAULT":
+			listed_qty = row.get("quantity", 0)
+			break
+	return listed_qty
+
 def extract_data(item):
+	summaries = None
+	availbility = None
 	if isinstance(item, string_types):
 		item = json.loads(item)
-	if not item.get("summaries"):
-		return None
-	return item.get("summaries")[0]
+	
+	if item.get("summaries"):
+		summaries = item.get("summaries")[0]
+	
+	if item.get("fulfillmentAvailability"):
+		availbility = item.get("fulfillmentAvailability")[0]
+	
+	return summaries, availbility
 
+
+
+def sync_item_stock_to_amazon(item_code):
+	"""
+	Synchronize stock quantity of an item to Amazon.
+	"""
+	if not frappe.db.exists('Item Amazon SP Listing', {"parent": item_code}):
+		return
+	
+	listing = frappe.get_doc("Amazon SP Listing", item_code)
+	if listing.fulfillment_channel == "FBA":
+		frappe.msgprint(
+			_("FBA listings are not supported for stock synchronization. ")
+		)
+		return
+	listing.sync_inventory()
 
 @frappe.whitelist()
 @frappe.validate_and_sanitize_search_inputs

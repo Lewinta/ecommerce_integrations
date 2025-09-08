@@ -1,0 +1,239 @@
+{
+ "actions": [],
+ "allow_rename": 1,
+ "autoname": "field:order_id",
+ "creation": "2025-06-21 05:38:10.505819",
+ "default_view": "List",
+ "doctype": "DocType",
+ "editable_grid": 1,
+ "engine": "InnoDB",
+ "field_order": [
+  "main_tab",
+  "order_id",
+  "order_type",
+  "email",
+  "sales_channel",
+  "status",
+  "prime",
+  "main_cb",
+  "purchase_date",
+  "fulfillment_channel",
+  "marketplace_id",
+  "items_shipped",
+  "premium_order",
+  "items_sb",
+  "items",
+  "totals_sb",
+  "totals_cb",
+  "order_total",
+  "shipping_tab",
+  "earliest_ship_date",
+  "latest_ship_date",
+  "ship_service_level",
+  "shipping_cb",
+  "city",
+  "state",
+  "pincode",
+  "country",
+  "raw_tab",
+  "payload"
+ ],
+ "fields": [
+  {
+   "fieldname": "main_tab",
+   "fieldtype": "Tab Break",
+   "label": "Main"
+  },
+  {
+   "fieldname": "order_id",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Order ID",
+   "reqd": 1,
+   "unique": 1
+  },
+  {
+   "fieldname": "order_type",
+   "fieldtype": "Data",
+   "label": "Order Type"
+  },
+  {
+   "fieldname": "email",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Email"
+  },
+  {
+   "fieldname": "sales_channel",
+   "fieldtype": "Data",
+   "label": "Sales Channel"
+  },
+  {
+   "fieldname": "status",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Status"
+  },
+  {
+   "fieldname": "main_cb",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "purchase_date",
+   "fieldtype": "Date",
+   "in_list_view": 1,
+   "label": "Purchase Date"
+  },
+  {
+   "fieldname": "fulfillment_channel",
+   "fieldtype": "Data",
+   "in_list_view": 1,
+   "label": "Fulfillment Channel"
+  },
+  {
+   "fieldname": "marketplace_id",
+   "fieldtype": "Data",
+   "label": "Marketplace ID"
+  },
+  {
+   "fieldname": "items_shipped",
+   "fieldtype": "Data",
+   "label": "Items Shipped"
+  },
+  {
+   "default": "0",
+   "fieldname": "premium_order",
+   "fieldtype": "Check",
+   "label": "Premium Order"
+  },
+  {
+   "default": "0",
+   "fieldname": "prime",
+   "fieldtype": "Check",
+   "label": "Prime"
+  },
+  {
+   "fieldname": "items_sb",
+   "fieldtype": "Section Break",
+   "label": "Items"
+  },
+  {
+   "fieldname": "items",
+   "fieldtype": "Table",
+   "options": "Amazon Order Item"
+  },
+  {
+   "fieldname": "shipping_tab",
+   "fieldtype": "Tab Break",
+   "label": "Shipping"
+  },
+  {
+   "fieldname": "earliest_ship_date",
+   "fieldtype": "Date",
+   "label": "Earliest Ship Date"
+  },
+  {
+   "fieldname": "latest_ship_date",
+   "fieldtype": "Date",
+   "label": "Latest Ship Date"
+  },
+  {
+   "fieldname": "ship_service_level",
+   "fieldtype": "Data",
+   "label": "Ship Service Level"
+  },
+  {
+   "fieldname": "shipping_cb",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "city",
+   "fieldtype": "Data",
+   "label": "City"
+  },
+  {
+   "fieldname": "state",
+   "fieldtype": "Data",
+   "label": "State"
+  },
+  {
+   "fieldname": "pincode",
+   "fieldtype": "Data",
+   "label": "Zip Code"
+  },
+  {
+   "fieldname": "country",
+   "fieldtype": "Data",
+   "label": "Country"
+  },
+  {
+   "fieldname": "raw_tab",
+   "fieldtype": "Tab Break",
+   "label": "Raw"
+  },
+  {
+   "fieldname": "payload",
+   "fieldtype": "Code",
+   "label": "Payload",
+   "options": "JSON"
+  },
+  {
+   "fieldname": "totals_sb",
+   "fieldtype": "Section Break",
+   "label": "Totals"
+  },
+  {
+   "fieldname": "totals_cb",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "order_total",
+   "fieldtype": "Currency",
+   "label": "Order Total"
+  }
+ ],
+ "hide_toolbar": 1,
+ "is_virtual": 1,
+ "links": [],
+ "modified": "2025-06-21 07:31:57.609875",
+ "modified_by": "Administrator",
+ "module": "Ecommerce Integrations",
+ "name": "Amazon Order",
+ "naming_rule": "Expression (old style)",
+ "owner": "Administrator",
+ "permissions": [
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "System Manager",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales User",
+   "share": 1,
+   "write": 1
+  },
+  {
+   "email": 1,
+   "export": 1,
+   "print": 1,
+   "read": 1,
+   "report": 1,
+   "role": "Sales Manager",
+   "share": 1,
+   "write": 1
+  }
+ ],
+ "sort_field": "modified",
+ "sort_order": "DESC",
+ "states": []
+}
