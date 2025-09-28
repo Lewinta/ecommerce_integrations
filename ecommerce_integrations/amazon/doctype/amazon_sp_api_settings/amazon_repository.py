@@ -106,7 +106,6 @@ class AmazonRepository:
 		financial_events_payload = self.call_sp_api_method(
 			sp_api_method=finances.list_financial_events_by_order_id, order_id=order_id
 		)
-
 		charges_and_fees = {"charges": [], "fees": []}
 
 		while True:
@@ -434,19 +433,13 @@ class AmazonRepository:
 
 				charges_and_fees = self.get_charges_and_fees(order_id)
 
-				for charge in charges_and_fees.get("charges"):
-					so.append("taxes", charge)
+				# Requested not to add Taxes to MFN orders
+				# for charge in charges_and_fees.get("charges"):
+				# 	so.append("taxes", charge)
 
 				for fee in charges_and_fees.get("fees"):
 					so.append("taxes", fee)
 				
-				if total_tax > 0:
-					so.append("taxes", {
-						"charge_type": "Actual",
-						"account_head": self.get_account("Tax"),
-						"tax_amount": total_tax,
-						"description": "Total Item Tax"
-					})
 			try:
 				so.insert(ignore_permissions=True)
 				so.submit()
@@ -680,7 +673,7 @@ class AmazonRepository:
 			# For AFN orders we only create a sales invoice
 			# For MFN orders we create a sales order and sales invoice
 			if order.get("FulfillmentChannel") == "MFN":
-				print("""Creating sales order for MFN order""")
+				print("""Creating sales order for MFN""")
 				sales_order = self.create_sales_order(order)
 				sinv = make_sales_invoice(sales_order, ignore_permissions=True)
 				delivery_date = dateutil.parser.parse(order.get("LatestShipDate")).strftime("%Y-%m-%d") if order.get("LatestShipDate") else add_days(today(), 3)
@@ -695,7 +688,11 @@ class AmazonRepository:
 				sinv.set_missing_values()
 				sinv.calculate_taxes_and_totals()
 				if sinv.items:
-					if name := frappe.db.exists("Sales Invoice", {"amazon_order_id": order.get("AmazonOrderId")}):
+					filters = {
+						"amazon_order_id": order.get("AmazonOrderId"),
+						"docstatus": 1
+					}
+					if name := frappe.db.exists("Sales Invoice", filters):
 						sinv = frappe.get_doc("Sales Invoice", name)
 					else:
 						sinv.save(ignore_permissions=True)
@@ -742,11 +739,20 @@ class AmazonRepository:
 		fulfillment_channels = ["AFN", "MFN"]
 		collected_orders = []
 		page_token = None
-
+		valid_statuses = [
+			# "PendingAvailability",
+			"Pending",
+			"Unshipped",
+			"PartiallyShipped",
+			"Shipped",
+			"InvoiceUnconfirmed",
+			# "Canceled",
+			"Unfulfillable",
+		]
 		while True:
 			params = {
-				"created_after": created_after or add_days(today(), -3),
-				"order_statuses": VALID_ORDER_STATUSES,
+				"created_after": created_after or add_days(today(), -4),
+				"order_statuses": valid_statuses,
 				"fulfillment_channels": fulfillment_channels,
 				"max_results": 10,  # API hard-limit
 			}
@@ -845,26 +851,32 @@ class AmazonRepository:
 
 
 def validate_amazon_sp_api_credentials(**args) -> None:
-	api = SPAPI(
-		iam_arn=args.get("iam_arn"),
-		client_id=args.get("client_id"),
-		client_secret=args.get("client_secret"),
-		refresh_token=args.get("refresh_token"),
-		aws_access_key=args.get("aws_access_key"),
-		aws_secret_key=args.get("aws_secret_key"),
-		country_code=args.get("country"),
-	)
+    # If secret not provided (or looks masked), pull the real one from the DocType
+    client_secret = args.get("client_secret")
+    settings_name = args.get("name") or args.get("amazon_sp_api_settings")
 
-	try:
-		# validate client_id, client_secret and refresh_token.
-		api.get_access_token()
+    if not client_secret or client_secret.strip() in {"*****", "********", "************"}:
+        if not settings_name:
+            frappe.throw("Missing settings name to retrieve stored client secret.")
+        doc = frappe.get_doc("Amazon SP API Settings", settings_name)
+        client_secret = doc.get_password("client_secret")
 
-		# validate aws_access_key, aws_secret_key, region and iam_arn.
-		api.get_auth()
+    api = SPAPI(
+        iam_arn=args.get("iam_arn"),
+        client_id=args.get("client_id"),
+        client_secret=client_secret,
+        refresh_token=args.get("refresh_token"),
+        aws_access_key=args.get("aws_access_key"),
+        aws_secret_key=args.get("aws_secret_key"),
+        country_code=args.get("country"),
+    )
 
-	except SPAPIError as e:
-		msg = f"<b>Error:</b> {e.error}<br/><b>Error Description:</b> {e.error_description}"
-		frappe.throw(msg)
+    try:
+        api.get_access_token()
+        api.get_auth()
+    except SPAPIError as e:
+        msg = f"<b>Error:</b> {e.error}<br/><b>Error Description:</b> {e.error_description}"
+        frappe.throw(msg)
 
 
 def get_orders(amz_setting_name=None, created_after=None) -> list:
@@ -907,7 +919,7 @@ def get_amazon_orders():
 				else:
 					continue
 			# Doesn't exist, create a new one
-			if order["OrderStatus"] in ["Canceled", "Pending"]:
+			if order["OrderStatus"] in ["Canceled"]:
 				continue
 			doc = frappe.new_doc("Amazon Order Bucket")
 			doc.update(

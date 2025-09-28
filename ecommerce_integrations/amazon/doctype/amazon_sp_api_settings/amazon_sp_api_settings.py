@@ -234,7 +234,7 @@ def schedule_get_order_details():
 	)
 
 	for amz_setting in amz_settings:
-		get_orders(amz_setting_name=amz_setting.name, created_after=amz_setting.after_date)
+		get_orders(amz_setting_name=amz_setting.name, created_after=add_days(today(), -5))
 
 
 def setup_custom_fields():

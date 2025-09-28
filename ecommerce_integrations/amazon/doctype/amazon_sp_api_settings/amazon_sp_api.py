@@ -122,7 +122,7 @@ class AWSSigV4(AuthBase):
 		if "Host" not in request.headers:
 			request.headers["Host"] = host
 		if "Content-Type" not in request.headers:
-			request.headers["Content-Type"] = "application/x-www-form-urlencoded; charset=utf-8"
+			request.headers["Content-Type"] = "application/json"
 		if "User-Agent" not in request.headers:
 			request.headers["User-Agent"] = "python-amazon-mws/0.0.1 (Language=Python)"
 		if self.aws_session_token:
@@ -290,7 +290,6 @@ class SPAPI(object):
 			params = Util.remove_empty(params)
 		if isinstance(data, dict):
 			data = Util.remove_empty(data)
-		
 		if method.upper() in ["PATCH", "POST", "PUT"]:
 			headers["Content-Type"] = "application/json; charset=utf-8"
 
