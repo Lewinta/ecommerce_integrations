@@ -268,13 +268,18 @@ class AmazonRepository:
 						listing = frappe.get_doc("Amazon SP Listing", order_item.get("SellerSKU"))
 						listing.sync_with_erp(self.amz_setting)
 						item_code = order_item.get("SellerSKU")
+
+                    # Calculate unit price by dividing total price by quantity
+					total_price = flt(order_item.get("ItemPrice", {}).get("Amount", 0))
+					quantity = flt(order_item.get("QuantityOrdered", 1))
+					unit_price = total_price / quantity if quantity > 0 else total_price
 					
 					final_order_items.append(
 						{
 							"item_code": item_code,
 							"item_name": order_item.get("SellerSKU"),
 							"description": order_item.get("Title"),
-							"rate": order_item.get("ItemPrice", {}).get("Amount", 0),
+							"rate": unit_price,
 							"qty": order_item.get("QuantityOrdered"),
 							"stock_uom": "Nos",
 							"warehouse": warehouse,

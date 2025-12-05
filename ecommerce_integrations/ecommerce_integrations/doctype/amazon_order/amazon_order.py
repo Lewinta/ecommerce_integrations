@@ -32,6 +32,7 @@ class AmazonOrder(Document):
 		payload = json.loads(self.payload)
 		return az.sync_order_with_erp(payload)
 
+	
 	def db_update(self, *args, **kwargs):
 		pass
 
@@ -75,6 +76,10 @@ class AmazonOrder(Document):
 		@staticmethod
 		def get_stats(args):
 			pass
+
+@frappe.whitelist()
+def exists(name):
+	return frappe.db.exists("Sales Order", {"po_no": name})
 
 def decode(order: dict) -> dict:
 	creation = dateutil.parser.parse(order.get("PurchaseDate")).strftime("%Y-%m-%d %H:%M:%S") if order.get("PurchaseDate") else now()
