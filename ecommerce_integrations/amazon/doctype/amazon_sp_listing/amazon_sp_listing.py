@@ -240,9 +240,9 @@ def amazon_sp_listings_ct_query(doctype, txt, searchfield, start, page_len, filt
     from ecommerce_integrations.amazon.doctype.amazon_sp_api_settings.amazon_repository import search_listings
 
     all_items = search_listings(
-        seller_id="AZ8IEI2WE6JHM",
         amz_setting_name="2n7sn0hlgc",
-		sku=txt
+        seller_id="AZ8IEI2WE6JHM",
+        sku_list=[txt] if txt else None
     )
 
     # Convert to the correct format: list of [value, description] pairs
